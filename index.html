@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Hair Eraser Pro</title>
+    <title>Bald Hair Eraser - Clean Skin</title>
     <style>
         * {
             margin: 0;
@@ -71,8 +71,6 @@
             border-radius: 20px;
             margin-bottom: 16px;
             display: none;
-            overflow: auto;
-            max-height: 60vh;
             text-align: center;
         }
         canvas {
@@ -135,29 +133,18 @@
             font-size: 11px;
             color: #777;
         }
-        .zoom-bar {
+        .strength-area {
+            background: #111;
+            padding: 12px 16px;
+            border-radius: 40px;
             display: none;
-            gap: 10px;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 16px;
         }
-        .zoom-bar button {
-            flex: 1;
-            padding: 8px;
-            background: #1a1a1a;
-            border: none;
-            border-radius: 30px;
-            color: #fff;
+        .strength-area label {
+            color: #888;
             font-size: 12px;
-            cursor: pointer;
-        }
-        .show {
-            display: flex;
-        }
-        .block {
-            display: block;
-        }
-        .hide {
-            display: none;
         }
     </style>
 </head>
@@ -171,17 +158,11 @@
     <div class="upload" id="uploadBtn">
         <span>📸</span>
         <p>Select Media</p>
-        <small>JPG, PNG, WEBP, GIF, MP4, MOV, AVI, WebM</small>
+        <small>JPG, PNG, WEBP, MP4, MOV</small>
     </div>
 
     <div class="canvas-area" id="canvasArea">
         <canvas id="canvas"></canvas>
-    </div>
-
-    <div class="zoom-bar" id="zoomBar">
-        <button id="zoomOut">🔍 Zoom Out</button>
-        <button id="zoomReset">⟳ Reset</button>
-        <button id="zoomIn">🔍 Zoom In</button>
     </div>
 
     <div class="actions" id="actions">
@@ -191,13 +172,19 @@
     </div>
 
     <div class="brush-area" id="brushArea">
-        <label>🖌️ BRUSH</label>
-        <input type="range" id="brushRange" min="10" max="70" value="30">
-        <span id="brushVal" style="color:#fff;">30px</span>
+        <label>🖌️ BRUSH SIZE</label>
+        <input type="range" id="brushRange" min="15" max="80" value="35">
+        <span id="brushVal" style="color:#fff;">35px</span>
+    </div>
+
+    <div class="strength-area" id="strengthArea">
+        <label>💪 ERASE STRENGTH</label>
+        <input type="range" id="strengthRange" min="50" max="100" value="95">
+        <span id="strengthVal" style="color:#fff;">95%</span>
     </div>
 
     <div class="info" id="info">
-        💡 Select any photo or video
+        💡 Select photo or video
     </div>
 </div>
 
@@ -214,32 +201,26 @@
     const ctx = canvas.getContext('2d');
     const actions = document.getElementById('actions');
     const brushArea = document.getElementById('brushArea');
-    const zoomBar = document.getElementById('zoomBar');
+    const strengthArea = document.getElementById('strengthArea');
     const undoBtn = document.getElementById('undoBtn');
     const saveBtn = document.getElementById('saveBtn');
     const clearBtn = document.getElementById('clearBtn');
     const brushRange = document.getElementById('brushRange');
     const brushVal = document.getElementById('brushVal');
+    const strengthRange = document.getElementById('strengthRange');
+    const strengthVal = document.getElementById('strengthVal');
     const info = document.getElementById('info');
-    const zoomOut = document.getElementById('zoomOut');
-    const zoomReset = document.getElementById('zoomReset');
-    const zoomIn = document.getElementById('zoomIn');
 
     // State
     let mode = 'photo';
     let history = [];
     let drawing = false;
     let lastX = 0, lastY = 0;
-    let brushSize = 30;
+    let brushSize = 35;
+    let eraseStrength = 0.95;
     let imgW = 0, imgH = 0;
     let video = null;
     let animationId = null;
-    
-    // Zoom state
-    let zoom = 1;
-    let offsetX = 0, offsetY = 0;
-    let isPanning = false;
-    let panStartX = 0, panStartY = 0;
 
     // Brush size
     brushRange.oninput = function() {
@@ -247,47 +228,10 @@
         brushVal.innerText = brushSize + 'px';
     };
 
-    // Zoom functions
-    function applyZoom() {
-        canvas.style.transform = `scale(${zoom}) translate(${offsetX/zoom}px, ${offsetY/zoom}px)`;
-        canvas.style.transformOrigin = 'center center';
-    }
-
-    zoomIn.onclick = () => {
-        zoom = Math.min(zoom + 0.2, 3);
-        applyZoom();
-    };
-    zoomOut.onclick = () => {
-        zoom = Math.max(zoom - 0.2, 0.5);
-        applyZoom();
-    };
-    zoomReset.onclick = () => {
-        zoom = 1;
-        offsetX = 0;
-        offsetY = 0;
-        applyZoom();
-    };
-
-    // Pan functionality
-    canvas.onmousedown = (e) => {
-        if (e.button === 1 || e.shiftKey) {
-            isPanning = true;
-            panStartX = e.clientX - offsetX;
-            panStartY = e.clientY - offsetY;
-            canvas.style.cursor = 'grabbing';
-            e.preventDefault();
-        }
-    };
-    window.onmousemove = (e) => {
-        if (isPanning) {
-            offsetX = e.clientX - panStartX;
-            offsetY = e.clientY - panStartY;
-            applyZoom();
-        }
-    };
-    window.onmouseup = () => {
-        isPanning = false;
-        canvas.style.cursor = 'crosshair';
+    // Erase strength
+    strengthRange.oninput = function() {
+        eraseStrength = parseInt(this.value) / 100;
+        strengthVal.innerText = this.value + '%';
     };
 
     // Mode switch
@@ -298,10 +242,9 @@
         if (video) stopVideo();
         resetAll();
         uploadBtn.querySelector('p').innerText = 'Select Photo';
-        uploadBtn.querySelector('small').innerText = 'JPG, PNG, WEBP, GIF';
+        uploadBtn.querySelector('small').innerText = 'JPG, PNG, WEBP';
         fileInput.accept = 'image/*';
-        info.innerText = '💡 Select a photo (JPG, PNG, WEBP, GIF)';
-        zoomBar.style.display = 'none';
+        info.innerText = '💡 Select a photo';
     };
 
     videoMode.onclick = () => {
@@ -311,10 +254,9 @@
         if (video) stopVideo();
         resetAll();
         uploadBtn.querySelector('p').innerText = 'Select Video';
-        uploadBtn.querySelector('small').innerText = 'MP4, MOV, AVI, WebM, 3GP';
+        uploadBtn.querySelector('small').innerText = 'MP4, MOV, WebM';
         fileInput.accept = 'video/*';
-        info.innerText = '💡 Select a video (MP4, MOV, WebM)';
-        zoomBar.style.display = 'flex';
+        info.innerText = '💡 Select a video';
     };
 
     function stopVideo() {
@@ -329,16 +271,13 @@
         canvasArea.style.display = 'none';
         actions.style.display = 'none';
         brushArea.style.display = 'none';
+        strengthArea.style.display = 'none';
         uploadBtn.style.display = 'block';
         history = [];
         imgW = 0;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         fileInput.value = '';
         if (video) stopVideo();
-        zoom = 1;
-        offsetX = 0;
-        offsetY = 0;
-        applyZoom();
     }
 
     uploadBtn.onclick = () => fileInput.click();
@@ -347,13 +286,10 @@
         const file = e.target.files[0];
         if (!file) return;
         
-        const fileType = file.type;
-        if (fileType.startsWith('image/')) {
+        if (file.type.startsWith('image/')) {
             loadPhoto(file);
-        } else if (fileType.startsWith('video/')) {
+        } else if (file.type.startsWith('video/')) {
             loadVideo(file);
-        } else {
-            info.innerText = '❌ Unsupported file type. Select image or video.';
         }
     };
 
@@ -376,25 +312,15 @@
                 
                 canvas.width = nw;
                 canvas.height = nh;
-                canvas.style.width = nw + 'px';
-                canvas.style.height = nh + 'px';
                 imgW = nw;
                 imgH = nh;
                 
                 ctx.drawImage(img, 0, 0, nw, nh);
                 showUI();
                 saveState();
-                info.innerText = '✅ Ready! Draw on hair to remove';
-                info.style.background = 'rgba(16,185,129,0.1)';
-                info.style.color = '#10b981';
-            };
-            img.onerror = () => {
-                info.innerText = '❌ Error loading image. Try another file.';
+                info.innerText = '✅ Ready! Draw on hair - will become clean skin';
             };
             img.src = ev.target.result;
-        };
-        reader.onerror = () => {
-            info.innerText = '❌ Error reading file. Try again.';
         };
         reader.readAsDataURL(file);
     }
@@ -410,8 +336,6 @@
         video.onloadeddata = () => {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            canvas.style.width = '100%';
-            canvas.style.height = 'auto';
             imgW = video.videoWidth;
             imgH = video.videoHeight;
             
@@ -423,13 +347,7 @@
             }
             drawFrame();
             showUI();
-            info.innerText = '🎬 Video playing! Draw on hair to remove (video pauses)';
-            info.style.background = 'rgba(168,85,247,0.1)';
-            info.style.color = '#a855f7';
-        };
-        video.onerror = () => {
-            info.innerText = '❌ Error loading video. Try MP4 or WebM format.';
-            URL.revokeObjectURL(url);
+            info.innerText = '🎬 Video playing! Draw on hair';
         };
         video.load();
     }
@@ -438,6 +356,7 @@
         canvasArea.style.display = 'block';
         actions.style.display = 'flex';
         brushArea.style.display = 'flex';
+        strengthArea.style.display = 'flex';
         uploadBtn.style.display = 'none';
     }
 
@@ -462,35 +381,49 @@
         }
     }
 
-    // Erase hair function
-    function eraseAt(x, y, r) {
+    // STRONG ERASE - makes it bald/clean skin
+    function strongEraseAt(x, y, r) {
         const imgData = ctx.getImageData(0, 0, imgW, imgH);
         const data = imgData.data;
         const cx = Math.floor(x);
         const cy = Math.floor(y);
         const rad = Math.floor(r);
 
-        // Sample skin color from surrounding
-        let skinR = 210, skinG = 175, skinB = 145;
-        const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+        // Sample skin color from surrounding area (clean skin tone)
+        let skinR = 0, skinG = 0, skinB = 0;
+        let skinCount = 0;
         
+        const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
         for (let ang of angles) {
             const radAng = ang * Math.PI / 180;
-            const sx = cx + Math.cos(radAng) * rad * 1.3;
-            const sy = cy + Math.sin(radAng) * rad * 1.3;
+            const sx = cx + Math.cos(radAng) * rad * 1.5;
+            const sy = cy + Math.sin(radAng) * rad * 1.5;
             const ix = Math.floor(sx), iy = Math.floor(sy);
             if (ix >= 0 && ix < imgW && iy >= 0 && iy < imgH) {
                 const idx = (iy * imgW + ix) * 4;
                 const bright = (data[idx] + data[idx+1] + data[idx+2]) / 3;
-                if (bright > 80 && bright < 230) {
-                    skinR = (skinR + data[idx]) / 2;
-                    skinG = (skinG + data[idx+1]) / 2;
-                    skinB = (skinB + data[idx+2]) / 2;
+                // Take brighter pixels as skin reference
+                if (bright > 100 && bright < 250) {
+                    skinR += data[idx];
+                    skinG += data[idx+1];
+                    skinB += data[idx+2];
+                    skinCount++;
                 }
             }
         }
+        
+        if (skinCount > 0) {
+            skinR = skinR / skinCount;
+            skinG = skinG / skinCount;
+            skinB = skinB / skinCount;
+        } else {
+            // Default skin tone
+            skinR = 215;
+            skinG = 175;
+            skinB = 145;
+        }
 
-        // Erase dark pixels (hair)
+        // Apply strong erase - completely replace hair pixels with skin
         for (let dy = -rad; dy <= rad; dy++) {
             for (let dx = -rad; dx <= rad; dx++) {
                 const dist = Math.hypot(dx, dy);
@@ -501,11 +434,21 @@
                         const bright = (data[idx] + data[idx+1] + data[idx+2]) / 3;
                         
                         // Detect hair (dark pixels)
-                        if (bright < 115) {
-                            const strength = 1 - (dist / rad);
-                            data[idx] = data[idx] * (1 - strength * 0.85) + skinR * strength * 0.85;
-                            data[idx+1] = data[idx+1] * (1 - strength * 0.85) + skinG * strength * 0.85;
-                            data[idx+2] = data[idx+2] * (1 - strength * 0.85) + skinB * strength * 0.85;
+                        const isHair = bright < 130;
+                        
+                        if (isHair) {
+                            const strength = eraseStrength * (1 - (dist / rad));
+                            // Completely replace with skin color
+                            data[idx] = data[idx] * (1 - strength) + skinR * strength;
+                            data[idx+1] = data[idx+1] * (1 - strength) + skinG * strength;
+                            data[idx+2] = data[idx+2] * (1 - strength) + skinB * strength;
+                            
+                            // Additional pass for stubborn hair (make it even brighter)
+                            if (strength > 0.7) {
+                                data[idx] = data[idx] * 0.3 + skinR * 0.7;
+                                data[idx+1] = data[idx+1] * 0.3 + skinG * 0.7;
+                                data[idx+2] = data[idx+2] * 0.3 + skinB * 0.7;
+                            }
                         }
                     }
                 }
@@ -518,7 +461,7 @@
         if (mode === 'video' && video && !video.paused) {
             video.pause();
             if (animationId) cancelAnimationFrame(animationId);
-            info.innerText = '⏸ Paused. Draw to remove hair. Tap canvas to resume.';
+            info.innerText = '⏸ Paused. Draw to remove hair. Double tap to resume.';
         }
     }
 
@@ -565,7 +508,7 @@
         lastX = pos.x;
         lastY = pos.y;
         saveState();
-        eraseAt(lastX, lastY, brushSize);
+        strongEraseAt(lastX, lastY, brushSize);
     }
 
     function doDraw(e) {
@@ -575,15 +518,17 @@
         
         const dist = Math.hypot(pos.x - lastX, pos.y - lastY);
         if (dist > 2) {
-            const steps = Math.min(6, Math.ceil(dist / 3));
+            const steps = Math.min(8, Math.ceil(dist / 2));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
-                eraseAt(lastX + (pos.x - lastX) * t, lastY + (pos.y - lastY) * t, brushSize);
+                const ix = lastX + (pos.x - lastX) * t;
+                const iy = lastY + (pos.y - lastY) * t;
+                strongEraseAt(ix, iy, brushSize);
             }
             lastX = pos.x;
             lastY = pos.y;
         } else {
-            eraseAt(pos.x, pos.y, brushSize);
+            strongEraseAt(pos.x, pos.y, brushSize);
         }
     }
 
@@ -608,7 +553,7 @@
     saveBtn.onclick = () => {
         if (imgW > 0) {
             const link = document.createElement('a');
-            link.download = 'hair_removed.png';
+            link.download = 'bald_hair_removed.png';
             link.href = canvas.toDataURL('image/png');
             link.click();
             info.innerText = '💾 Saved!';
